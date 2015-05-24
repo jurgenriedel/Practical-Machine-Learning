@@ -4,25 +4,27 @@ author: Jurgen Riedel
 ---
 
 ## Predictive Modeling on Human Activity Recognition
+Jürgen Riedel,
+May 24th 2015
 
 ### Introduction
 
-A recent developent is wearable technology, which has the goal to integrate technology into the everyday life. Friction less wearable devices, such as watches, armand, belts, etc. can monitor our daily movement on multi-dimensional ways by employing accelerometers, gyrometers and other electronic sensors. These devices produce massive ammount of data which poses a challenge to be processed, encoding underlying information about the users of these devices.
+A recent development is wearable technology, which has the goal to integrate technology into the everyday life. Friction less wearable devices, such as watches, armband, belts, etc. can monitor our daily movement on multi-dimensional ways by employing accelerometers, gyrometers and other electronic sensors. These devices produce massive amount of data which posses a challenge to be processed to understand the underlying information about the users of these devices.
 
-The goal of this study is to use the data of Velloso, E. et al. priject. In Velloso’s program, a group of tester was required to perform 5 type of movements (here simplified as capital letter A ~ E), with sensor device positioned on 4 part of the body and a set of time sequence data is produced. The goal is to predict the manner in which they did the exercise, indictaed by the “classe” variable in the data set.
+The goal of this study is to use the data of Velloso, E. et al. project. In Velloso’s program, a group of tester was required to perform 5 type of movements (here simplified as capital letter A ~ E), with sensor device positioned on 4 part of the body and a set of time sequence data is produced. The goal is to predict the manner in which they did the exercise, indicated by the “classe” variable in the data set.
 
-The study is struted as follows: 
+The study is structured as follows: 
 
 1. Load the training and testing data
 2. Conduct exploratory data analysis
-3. Preprocess the data and eliminate not usefull variables
+3. Preprocess the data and eliminate not useful variables
 4. Perform predictor selection
 5. Evaluate three models and evaluate the prediction accuracy and out of sample error of the three models 
 6. Select the best model and apply it to the test set to get the prediction
 
 ### Data Processing
 
-```{r, results='hide', message=FALSE, warning=FALSE}
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 library(knitr)
 opts_chunk$set(echo=FALSE)
 
@@ -33,7 +35,7 @@ registerDoMC(cores = 5)
 
 ##### Load dataset
 We load the training set and test set from the website [Data Source](https://class.coursera.org/predmachlearn-014/human_grading/view/courses/973549/assessments/4/submissions). The original data can be retrieved from this source: [Original Data Source](https://class.coursera.org/predmachlearn-014/human_grading/view/courses/973549/assessments/4/submissions)
-```{r, results='hide', message=FALSE, warning=FALSE}
+```{r, echo=TRUE, results='hide', message=FALSE, warning=FALSE}
 require("RCurl")
 training <- read.csv(text = getURL("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),na.strings = '')
 testing <- read.csv(text = getURL("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),na.strings = '')
@@ -42,7 +44,7 @@ testing <- read.csv(text = getURL("https://d396qusza40orc.cloudfront.net/predmac
 ##### Drop unwanted columns
 First we look at the variables in the training data set. The first 7 variables 
 
-```{r, results='asis', warning=FALSE, message=FALSE}
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
 library(xtable)
 result <- data.frame(colnames(testing[,1:7]))
 colnames(result) <- c("Non essential variables")
@@ -62,7 +64,6 @@ The remaining variables in the data set contain summaries of other variables and
 ## Get column names of data set
 colnames <- colnames(training)
 
-#exclude <- grepl('kurtosis|skewness|max|min|amplitude|var|avg|stddev|total', colnames)
 exclude <- grepl('kurtosis|skewness|max|min|amplitude|var|avg|stddev', colnames)
 
 training <- training[,!(exclude)]
@@ -95,8 +96,7 @@ print(xtable(isNA, caption = "NA check for data sets"), type="html", comment=F)
 ##### Random forest predictor selection
 
 The randomForest() method implements Breiman's random forest algorithm (based on Breiman and Cutler's original 
-Fortran code) for classification and regression. Random forests are very good for classification and regression. 
-It uses multiple models for better performance. It also selects many samples in measuring variable importance. This approach can be used for model selection. It also works well when working with an extremely high number of candidate variables that need to be reduced.
+Fortran code) for classification and regression. Random forests are very good for classification and regression. It uses multiple models for better performance. It also selects many samples in measuring variable importance. This approach can be used for model selection. It also works well when working with an extremely high number of candidate variables that need to be reduced.
 
 ```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
 library(randomForest)
@@ -109,12 +109,12 @@ accuracy <- sum(testingSet$selPred)/nrow(testingSet)
 
 The accuracy of the model fir is `r round(accuracy,4)`
 
-In the next step we select the most important predictors by a) taking predictors by each classe factor having a higher accuracy than a given trashhold, b) by selecting the top 11 predictor orderd by mean accuracy, and c) by selecting the top 11 predictor orderd by mean gini measure. 
+In the next step we select the most important predictors by a) taking predictors by each 'classe' factor having a higher accuracy than a given threshold, b) by selecting the top 11 predictor ordered by mean accuracy, and c) by selecting the top 11 predictor ordered by mean gini index. 
 
 ##### Collect all important predictores for all measurements
 ```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE, fig.width=9, fig.height=9}
 library(calibrate)
-par(mfrow = c(2, 3))
+par(mfrow = c(2, 2))
 predictors <- c()
 predplot <- c()
 
@@ -149,6 +149,19 @@ colnames(predictorlist) <- c("Combined accuracy","Mean accuracy","Mean gini")
 library(xtable)
 print(xtable(predictorlist, caption = "List of significant predictors"), type="html", comment=F)
 ```
+
+We show now a feature plot from the first 5 selected predictors:
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE, fig.width=9, fig.height=9}
+library(caret)
+featurePlot(x = training[,predictors][, 1:5],
+            y = training$classe,
+            plot = "pairs",
+            main="Feature plot of the first 5 selected predictotrs",
+            ## Add a key at the top
+            auto.key = list(columns = 3))
+```
+
+The feature plot shows, that the area for the different predictions ('classe' factor) a visibly separated.
 
 We opt to take the result indicated in the column "Combined Accuracy" for the model selection process.
 
@@ -235,7 +248,7 @@ accerrlist <- rbind(cbind(round(accuracymod1,4),round(outofsampleErrorMod1,4))
 
 colnames(accerrlist) <- c("Model accuracy","Out-of-sample error")
 library(xtable)
-print(xtable(accerrlist, caption = "List of model accuray and out-of-sample error"), type="html", comment=F)
+print(xtable(accerrlist, digits=c(4,4,4), caption = "List of model accuray and out-of-sample error"), type="html", comment=F)
 ```
 
 We now calculate the confusion matrix for the three models.
@@ -288,10 +301,10 @@ cmPlot3 <- levelplot(confmatrixmod3, col.regions = colpal(20),
           })
 
 library(gridExtra)
-grid.arrange(cmPlot1, cmPlot2,cmPlot3, ncol=3)
+grid.arrange(cmPlot1, cmPlot2,cmPlot3, ncol=2)
 ```
 
-Based on the accuray and confusion matrix results, we see that the tree model is perfoming the least with an accuray of `r round(accuracymod1,4)`. The k-fold corssvalidation model fit with the rain() method performes better with an accuracy of `r round(accuracymod1,4)`. The best fit, however, gives the fit with the randomForest() method with an accuray of `r round(accuracymod3,4)`. Therefore, we select the third model using the randomForest() method as our best model to predict the classe outcome for the test data set.
+Based on the accuracy and confusion matrix results, we see that the tree model is preforming the least with an accuracy of `r round(accuracymod1,4)`. The k-fold cross-validation model fit with the rain() method performs better with an accuracy of `r round(accuracymod1,4)`. The best fit, however, gives the fit with the randomForest() method with an accuracy of `r round(accuracymod3,4)`. Therefore, we select the third model using the randomForest() method as our best model to predict the ‘classe’ outcome for the test data set.
 
 ### Predicting the outcome
 The predction of our best model is as follows:
@@ -318,4 +331,20 @@ pml_write_files = function(x){
 pml_write_files(answers)
 ```
 
+### References
+1. Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of 
+Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. 
+Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, 
+PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
 
+2. http://www.bios.unc.edu/~dzeng/BIOS740/randomforest.pdf
+
+3. http://stats.stackexchange.com/questions/61090/how-to-split-a-data-set-to-do-10-fold-cross-validation
+
+4. http://bigcomputing.blogspot.de/2014/10/an-example-of-using-random-forest-in.html
+
+5. http://www.listendata.com/2015/03/caret-package-implementation-in-r.html
+
+6. http://topepo.github.io/caret/varimp.html
+
+7. http://en.wikipedia.org/wiki/Wearable_technology
