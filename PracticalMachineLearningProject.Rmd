@@ -1,0 +1,321 @@
+---
+output: html_document
+author: Jurgen Riedel
+---
+
+## Predictive Modeling on Human Activity Recognition
+
+### Introduction
+
+A recent developent is wearable technology, which has the goal to integrate technology into the everyday life. Friction less wearable devices, such as watches, armand, belts, etc. can monitor our daily movement on multi-dimensional ways by employing accelerometers, gyrometers and other electronic sensors. These devices produce massive ammount of data which poses a challenge to be processed, encoding underlying information about the users of these devices.
+
+The goal of this study is to use the data of Velloso, E. et al. priject. In Velloso’s program, a group of tester was required to perform 5 type of movements (here simplified as capital letter A ~ E), with sensor device positioned on 4 part of the body and a set of time sequence data is produced. The goal is to predict the manner in which they did the exercise, indictaed by the “classe” variable in the data set.
+
+The study is struted as follows: 
+
+1. Load the training and testing data
+2. Conduct exploratory data analysis
+3. Preprocess the data and eliminate not usefull variables
+4. Perform predictor selection
+5. Evaluate three models and evaluate the prediction accuracy and out of sample error of the three models 
+6. Select the best model and apply it to the test set to get the prediction
+
+### Data Processing
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+library(knitr)
+opts_chunk$set(echo=FALSE)
+
+### Enable parallel processing
+library(doMC)
+registerDoMC(cores = 5)
+```
+
+##### Load dataset
+We load the training set and test set from the website [Data Source](https://class.coursera.org/predmachlearn-014/human_grading/view/courses/973549/assessments/4/submissions). The original data can be retrieved from this source: [Original Data Source](https://class.coursera.org/predmachlearn-014/human_grading/view/courses/973549/assessments/4/submissions)
+```{r, results='hide', message=FALSE, warning=FALSE}
+require("RCurl")
+training <- read.csv(text = getURL("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),na.strings = '')
+testing <- read.csv(text = getURL("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),na.strings = '')
+```
+
+##### Drop unwanted columns
+First we look at the variables in the training data set. The first 7 variables 
+
+```{r, results='asis', warning=FALSE, message=FALSE}
+library(xtable)
+result <- data.frame(colnames(testing[,1:7]))
+colnames(result) <- c("Non essential variables")
+print(xtable(result, caption = "Non essential variables for prediction"), type="html", comment=F)
+```
+
+are not measurements and we therefore exclude them from our training and test data sets.
+
+```{r, echo=TRUE, results='hide', message=FALSE, warning=FALSE}
+training <- subset( training, select = -c(1:7))
+testing <- subset( testing, select = -c(1:7))
+```
+
+The remaining variables in the data set contain summaries of other variables and are not numeric, i.e. kurtoses, skewnesses, maximums and minimums, amplitudes, variances, averages, and standard deviations. Since we are only interested variables which are directly  human motion measurements, we are removing those as well from our data sets.
+
+```{r, echo=TRUE, results='hide', message=FALSE, warning=FALSE}
+## Get column names of data set
+colnames <- colnames(training)
+
+#exclude <- grepl('kurtosis|skewness|max|min|amplitude|var|avg|stddev|total', colnames)
+exclude <- grepl('kurtosis|skewness|max|min|amplitude|var|avg|stddev', colnames)
+
+training <- training[,!(exclude)]
+testing <- testing[,!(exclude)]
+```
+
+### Preprocessing
+
+##### Create training and testing sets
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+library(caret); 
+set.seed(10302010)     
+
+trainIndex <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+trainingSet<- training[trainIndex,]
+testingSet<- training[-trainIndex,]
+```
+
+Check if data sets are NA free.
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+## Check if any NA values left in data set
+NAtrain <- any(sapply(trainingSet, function(x) any(is.na(x))))
+NAtest <- any(sapply(testingSet, function(x) any(is.na(x))))
+
+isNA <- data.frame(rbind(c("Training Set",NAtrain),c("Test Set",NAtest)))
+colnames(isNA) <- c("Data Set", "Has NAs")
+print(xtable(isNA, caption = "NA check for data sets"), type="html", comment=F)
+```
+
+##### Random forest predictor selection
+
+The randomForest() method implements Breiman's random forest algorithm (based on Breiman and Cutler's original 
+Fortran code) for classification and regression. Random forests are very good for classification and regression. 
+It uses multiple models for better performance. It also selects many samples in measuring variable importance. This approach can be used for model selection. It also works well when working with an extremely high number of candidate variables that need to be reduced.
+
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+library(randomForest)
+modelFit <-randomForest(classe ~., data = trainingSet, importance = TRUE)
+
+prediction <- predict(modelFit, testingSet)
+testingSet$selPred <- prediction == testingSet$classe
+accuracy <- sum(testingSet$selPred)/nrow(testingSet)
+```
+
+The accuracy of the model fir is `r round(accuracy,4)`
+
+In the next step we select the most important predictors by a) taking predictors by each classe factor having a higher accuracy than a given trashhold, b) by selecting the top 11 predictor orderd by mean accuracy, and c) by selecting the top 11 predictor orderd by mean gini measure. 
+
+##### Collect all important predictores for all measurements
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE, fig.width=9, fig.height=9}
+library(calibrate)
+par(mfrow = c(2, 3))
+predictors <- c()
+predplot <- c()
+
+for (i in 1:5){
+    x <- c(1:48)
+    y <- modelFit$importance[,i]
+    predplot[i] <- plot(y, main = paste("Measure", i), ylab="Importance")
+    textxy(x,y,names(y))
+    abline(h=0.075,col="red",lty=3, lwd = 2)
+    predictors <- c(predictors, names(y[y>.075]))
+}
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+par(mfrow = c(1, 1))
+```
+
+We show a list showing the results of the three methods:
+
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+#### Keep only unique values
+library(BioPhysConnectoR)
+modimpacc <- importance(modelFit, type=1)
+modimpgini <- importance(modelFit, type=2)
+predictorlist1 <- predictors <- sort(unique(predictors))
+predictorlist2 <- sort(names(mat.sort(modimpacc,1,decreasing = TRUE)[1:11]))
+predictorlist3 <- sort(names(mat.sort(modimpgini,1,decreasing = TRUE)[1:11]))
+predictorlist <- cbind(predictorlist1,predictorlist2,predictorlist3)
+colnames(predictorlist) <- c("Combined accuracy","Mean accuracy","Mean gini")
+
+##### List predictors
+library(xtable)
+print(xtable(predictorlist, caption = "List of significant predictors"), type="html", comment=F)
+```
+
+We opt to take the result indicated in the column "Combined Accuracy" for the model selection process.
+
+### Model Selection and Prediction
+
+After having selected the most important predictors, we now select the best model for our prediction. 
+
+##### Fitting the model with decision tree
+We first apply a tree model to best fit the training data.
+
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+library(rpart)
+set.seed(10302001)
+treeModelFit <- rpart(classe ~ accel_dumbbell_y + accel_forearm_x + 
+                       magnet_dumbbell_x + magnet_dumbbell_y + 
+                       magnet_dumbbell_z + pitch_belt  + pitch_forearm + roll_belt + 
+                       roll_dumbbell + roll_forearm + yaw_belt,
+                   method="class", data=trainingSet)
+```
+
+##### Fitting a model with random forest
+Secondly, we fit the data with the train() method using k-fold corss validation. Since the processing performance of the train method is decreasing significantly with the large data sets, we reduce the trainig set accordingly and then apply the model fit.
+
+###### Model with train() function
+
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+InTrain<-createDataPartition(y=trainingSet$classe,p=0.5,list=FALSE)
+trainingSet1<-trainingSet[InTrain,]
+
+randomtreeModelFit1<-train(classe ~ accel_dumbbell_y + accel_forearm_x + 
+                              magnet_dumbbell_x + magnet_dumbbell_y + 
+                              magnet_dumbbell_z + pitch_belt  + pitch_forearm + roll_belt + 
+                              roll_dumbbell + roll_forearm + yaw_belt,
+                data=trainingSet1,method="rf",
+                trControl=trainControl(method="cv",number=5),
+                prox=TRUE,allowParallel=TRUE)
+```
+
+###### Model with randomForest() function
+
+Lastly, we apply a model fit with the randomForest() method. 
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+set.seed(10302001)
+randomtreeModelFit2 <-randomForest(classe ~ accel_dumbbell_y + accel_forearm_x + 
+                                      magnet_dumbbell_x + magnet_dumbbell_y + 
+                                      magnet_dumbbell_z + pitch_belt  + pitch_forearm + roll_belt + 
+                                      roll_dumbbell + roll_forearm + yaw_belt,
+                                  data = trainingSet, importance = TRUE)
+```
+
+##### Out-of-sample error
+
+###### First model
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+treePredValues <- predict(treeModelFit, testingSet)
+treePrediction <- c()
+for (k in 1:nrow(testingSet)) {
+    treePrediction <- c(treePrediction, names(which.max(treePredValues[k,])))
+}
+testingSet$Pred1 <-treePrediction == testingSet$classe
+tablemod1<-table(treePrediction, testingSet$classe)
+accuracymod1 <- sum(testingSet$Pred1)/nrow(testingSet)
+outofsampleErrorMod1=1-accuracymod1
+```
+###### Second model
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+predictionmod2 <- predict(randomtreeModelFit1, testingSet)
+testingSet$Pred2 <- predictionmod2 == testingSet$classe
+tablemod2<-table(predictionmod2, testingSet$classe)
+accuracymod2 <- sum(testingSet$Pred2)/nrow(testingSet)
+outofsampleErrorMod2=1-accuracymod2
+```
+###### Third model
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+predictionmod3 <- predict(randomtreeModelFit2, testingSet)
+testingSet$Pred3 <- predictionmod3 == testingSet$classe
+tablemod3<-table(predictionmod3, testingSet$classe)
+accuracymod3 <- sum(testingSet$Pred3)/nrow(testingSet)
+outofsampleErrorMod3=1-accuracymod3
+
+accerrlist <- rbind(cbind(round(accuracymod1,4),round(outofsampleErrorMod1,4))
+    ,cbind(round(accuracymod2,4),round(outofsampleErrorMod2,4))
+    ,cbind(round(accuracymod3,4),round(outofsampleErrorMod3,4)))
+
+colnames(accerrlist) <- c("Model accuracy","Out-of-sample error")
+library(xtable)
+print(xtable(accerrlist, caption = "List of model accuray and out-of-sample error"), type="html", comment=F)
+```
+
+We now calculate the confusion matrix for the three models.
+
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE, fig.width=9, fig.height=9}
+library(calibrate)
+
+#### Get confusion matrix
+colpal <- colorRampPalette(c("white","yellow","red")) 
+
+### Model1
+confmatrixmod1 <- as.matrix(confusionMatrix(treePrediction,testingSet$classe))
+confmatrixmod1 <- round(apply(confmatrixmod1, 2, function(x) x / sum(x)), 3)
+### Model2
+confmatrixmod2 <- as.matrix(confusionMatrix(predictionmod2,testingSet$classe))
+confmatrixmod2 <- round(apply(confmatrixmod2, 2, function(x) x / sum(x)), 3)
+### Model3
+confmatrixmod3 <- as.matrix(confusionMatrix(predictionmod3,testingSet$classe))
+confmatrixmod3 <- round(apply(confmatrixmod3, 2, function(x) x / sum(x)), 3)
+
+### Model1
+cmPlot1 <- levelplot(confmatrixmod1, col.regions = colpal(20), 
+          xlab = 'Prediction', ylab = 'Reference', main="Model 1 (tree model)",
+          panel = function(...) {
+              panel.levelplot(...)
+              panel.text(x = rep(1:5, each = 5), y = rep(1:5, 5),
+                         labels = as.character(confmatrixmod1),
+                         col = ifelse(confmatrixmod1 > .6, 'white', 'blue'))
+          })
+
+
+### Model2
+cmPlot2 <- levelplot(confmatrixmod2, col.regions = colpal(20), 
+          xlab = 'Prediction', ylab = 'Reference', main="Model 2 (train() method)",
+          panel = function(...) {
+              panel.levelplot(...)
+              panel.text(x = rep(1:5, each = 5), y = rep(1:5, 5),
+                         labels = as.character(confmatrixmod2),
+                         col = ifelse(confmatrixmod2 > .6, 'white', 'blue'))
+          })
+
+### Model3
+cmPlot3 <- levelplot(confmatrixmod3, col.regions = colpal(20), 
+          xlab = 'Prediction', ylab = 'Reference', main="Model 3 (randomForest() method)",
+          panel = function(...) {
+              panel.levelplot(...)
+              panel.text(x = rep(1:5, each = 5), y = rep(1:5, 5),
+                         labels = as.character(confmatrixmod3),
+                         col = ifelse(confmatrixmod3 > .6, 'white', 'blue'))
+          })
+
+library(gridExtra)
+grid.arrange(cmPlot1, cmPlot2,cmPlot3, ncol=3)
+```
+
+Based on the accuray and confusion matrix results, we see that the tree model is perfoming the least with an accuray of `r round(accuracymod1,4)`. The k-fold corssvalidation model fit with the rain() method performes better with an accuracy of `r round(accuracymod1,4)`. The best fit, however, gives the fit with the randomForest() method with an accuray of `r round(accuracymod3,4)`. Therefore, we select the third model using the randomForest() method as our best model to predict the classe outcome for the test data set.
+
+### Predicting the outcome
+The predction of our best model is as follows:
+
+```{r, results='asis', echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+#### Best model fit prediction
+finalPrediction <- predict(randomtreeModelFit2, testing)
+
+library(xtable)
+print(xtable(data.frame(finalPrediction), caption = "Prediction of classe outcome for the test set"), type="html", comment=F)
+```
+
+##### Export results for validation
+```{r, results='asis', echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+answers <- finalPrediction
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+
+pml_write_files(answers)
+```
+
+
